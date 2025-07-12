@@ -60,6 +60,22 @@
       font-size: 1rem;
       color: #333;
     }
+    #timeline {
+      overflow-x: auto;
+      white-space: nowrap;
+      max-width: 100%;
+    }
+    .timeline-item {
+      display: inline-block;
+      margin-right: 8px;
+      padding: 4px 8px;
+      border: 1px solid #2c3e50;
+      border-radius: 4px;
+      background-color: #ecf0f1;
+      font-weight: bold;
+      min-width: 35px;
+      text-align: center;
+    }
     .buttons {
       display: flex;
       flex-wrap: wrap;
@@ -105,10 +121,9 @@
   <header>Gautam’s Scoreboard</header>
   <main>
     <div class="scoreboard" id="totalScore">0 - 0</div>
-
     <div class="info" id="infoRunsRequired">Runs Required: -- in -- balls</div>
     <div class="info" id="infoOvers">Overs: -- / --</div>
-    <div class="info" id="timeline">Timeline: Match not started</div>
+    <div class="info" id="timeline"></div>
 
     <div class="buttons">
       <button id="run0">Dot ball</button>
@@ -148,6 +163,7 @@
     let innings = 1;
     let target = null;
     let history = [];
+    const timelineItems = [];
 
     const totalScore = document.getElementById('totalScore');
     const infoRunsRequired = document.getElementById('infoRunsRequired');
@@ -168,14 +184,30 @@
       } else {
         infoRunsRequired.textContent = `Runs Required: -- in -- balls`;
       }
+      updateTimelineDisplay();
     }
 
-    function updateTimeline(action) {
-      const prev = timeline.textContent.replace('Timeline: ', '');
-      timeline.textContent = `Timeline: ${action} | ${prev}`;
+    function updateTimelineDisplay() {
+      timeline.innerHTML = '';
+      const visible = timelineItems.slice(-6);
+      visible.forEach(item => {
+        const span = document.createElement('span');
+        span.className = 'timeline-item';
+        span.textContent = item;
+        timeline.appendChild(span);
+      });
+    }
+
+    function recordBall(symbol) {
+      timelineItems.push(symbol);
+      updateTimelineDisplay();
     }
 
     function ballDelivered(legal = true) {
+      if (!maxOvers) {
+        alert("Please set overs before starting match.");
+        return;
+      }
       if (legal) {
         balls++;
         if (balls >= maxOvers * 6) {
@@ -193,43 +225,43 @@
         wickets = 0;
         balls = 0;
         alert(`Innings 1 over! Target for Innings 2: ${target}`);
-        updateTimeline("Innings 1 Over");
+        recordBall("Innings 1 Over");
         updateDisplay();
       } else {
-        if (runs >= target) {
-          alert("Team 2 Wins!");
-        } else {
-          alert("Team 1 Wins!");
-        }
-        updateTimeline("Match Over");
+        alert(runs >= target ? "Team 2 Wins!" : "Team 1 Wins!");
+        recordBall("Match Over");
       }
     }
 
     function addRun(run, legal = true) {
-      history.push({runs, wickets, balls});
+      if (!maxOvers) return alert("Set overs before scoring.");
+      history.push({ runs, wickets, balls });
       runs += run;
       ballDelivered(legal);
-      updateTimeline(`${run} run${run !== 1 ? 's' : ''}`);
+      recordBall(run);
     }
 
     function addWicket() {
-      history.push({runs, wickets, balls});
+      if (!maxOvers) return alert("Set overs before scoring.");
+      history.push({ runs, wickets, balls });
       wickets++;
       ballDelivered(true);
-      updateTimeline("Wicket");
+      recordBall("W");
     }
 
     function addWide() {
-      history.push({runs, wickets, balls});
+      if (!maxOvers) return alert("Set overs before scoring.");
+      history.push({ runs, wickets, balls });
       runs++;
-      updateTimeline("Wide");
+      recordBall("Wd");
       updateDisplay();
     }
 
     function addNoBall(extraRuns = 0) {
-      history.push({runs, wickets, balls});
+      if (!maxOvers) return alert("Set overs before scoring.");
+      history.push({ runs, wickets, balls });
       runs += 1 + extraRuns;
-      updateTimeline(`No Ball + ${extraRuns} runs`);
+      recordBall(extraRuns ? `NB+${extraRuns}` : "NB");
       updateDisplay();
     }
 
@@ -239,6 +271,7 @@
       runs = last.runs;
       wickets = last.wickets;
       balls = last.balls;
+      timelineItems.pop();
       updateDisplay();
     }
 
@@ -247,7 +280,7 @@
       oversInput.value = '';
       setOversBtn.disabled = false;
       oversInput.disabled = false;
-      timeline.textContent = "Timeline: Match not started";
+      timelineItems.length = 0;
       updateDisplay();
     }
 
@@ -261,11 +294,10 @@
       runs = 0; wickets = 0; balls = 0; innings = 1; target = null; history = [];
       setOversBtn.disabled = true;
       oversInput.disabled = true;
-      updateTimeline(`Match Started - ${val} overs`);
+      recordBall(`Match Started - ${val} overs`);
       updateDisplay();
     }
 
-    // Assign button listeners (only 'click' to avoid double tap)
     document.getElementById('run0').addEventListener('click', () => addRun(0));
     document.getElementById('run1').addEventListener('click', () => addRun(1));
     document.getElementById('run2').addEventListener('click', () => addRun(2));
