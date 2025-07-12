@@ -1,15 +1,40 @@
-const cacheName = 'gautam-scoreboard-v1';
-self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(cacheName).then(c => c.addAll([
-      '.',
-      'index.html',
-      'manifest.json',
-      'sw.js',
-      'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
-    ]))
+const CACHE_NAME = 'gautam-scoreboard-cache-v1';
+const urlsToCache = [
+  '.',
+  'index.html',
+  'manifest.json',
+  'script.js',
+  'icon-192.png',
+  'icon-512.png',
+  'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+];
+
+self.addEventListener('install', event => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(cache => {
+      return cache.addAll(urlsToCache);
+    })
   );
 });
-self.addEventListener('fetch', e => {
-  e.respondWith(caches.match(e.request).then(r => r || fetch(e.request)));
+
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches.keys().then(keyList =>
+      Promise.all(
+        keyList.map(key => {
+          if (key !== CACHE_NAME) {
+            return caches.delete(key);
+          }
+        })
+      )
+    )
+  );
+});
+
+self.addEventListener('fetch', event => {
+  event.respondWith(
+    caches.match(event.request).then(response => {
+      return response || fetch(event.request);
+    })
+  );
 });
