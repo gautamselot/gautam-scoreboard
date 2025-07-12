@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Gautam’s Scoreboard</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    body { font-family: sans-serif; max-width: 420px; margin: 1em auto; padding: 0 0.5em; background: #fafafa; }
+    h2 { text-align: center; margin-bottom: 0.3em; }
+    #mainUI { display: none; }
+    #score-box { font-size: 1.6em; font-weight: bold; text-align: center; padding: 0.6em; border: 2px solid #444; border-radius: 6px; background: #f1f1f1; }
+    #info { font-size:1.1em; text-align:center; margin:0.5em 0; }
+    #buttons { display:grid; grid-template-columns: repeat(3,1fr); gap:0.4em; margin-bottom:1em; }
+    #controls { display:flex; flex-wrap:wrap; justify-content:space-between; gap:0.4em; margin-bottom:1em; }
+    button { font-size:1em; padding:0.5em; border:1px solid #888; border-radius:4px; background:#f9f9f9; cursor:pointer; }
+    button:hover { background:#eee; }
+    #timeline { max-height:200px; overflow-y:auto; border-top:1px solid #ccc; padding-top:0.5em; }
+    #timeline div { padding:0.2em 0; border-bottom:1px dotted #ddd; }
+    .ended { color:red; font-weight:bold; text-align:center; }
+  </style>
+</head>
+<body>
+  <h2>Gautam’s Scoreboard</h2>
+  <div id="mainUI">
+    <div id="score-box"><span id="runs">0</span> - <span id="wickets">0</span></div>
+    <div id="info">
+      Innings: <span id="innings">1st</span><br>
+      Overs: <span id="overs">0.0</span><br>
+      Total Overs: <span id="totalOvers">–</span><br>
+      Target: <span id="target">–</span><br>
+      <span id="required"></span><br>
+      <span id="result" class="ended"></span>
+    </div>
+
+    <div id="buttons">
+      <button data-run="0">Dot ball</button>
+      <button data-run="1">1 run</button>
+      <button data-run="2">2 runs</button>
+      <button data-run="3">3 runs</button>
+      <button data-run="4">4 runs</button>
+      <button data-run="5">5 runs</button>
+      <button data-run="6">6 runs</button>
+      <button id="wide">Wide</button>
+      <button id="noball">No-ball</button>
+      <button id="wicket">Wicket</button>
+    </div>
+
+    <div id="controls">
+      <button id="undo">Undo</button>
+      <button id="switchInnings">Switch Innings</button>
+      <button id="exportPDF">Export PDF</button>
+      <button id="reset">Reset</button>
+    </div>
+
+    <div id="timeline"></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script>
+    const { jsPDF } = window.jspdf;
+
+    let totalRuns = 0,
+        totalWickets = 0,
+        balls = 0,
+        target = null,
+        maxOvers = null,
+        currentInnings = 1,
+        firstInningsScore = 0,
+        matchEnded = false;
+
+    const history    = [],
+          runsEl     = document.getElementById('runs'),
+          wktsEl     = document.getElementById('wickets'),
+          oversEl    = document.getElementById('overs'),
+          targetEl   = document.getElementById('target'),
+          totalOvEl  = document.getElementById('totalOvers'),
+          requiredEl = document.getElementById('required'),
+          inningsEl  = document.getElementById('innings'),
+          tlEl       = document.getElementById('timeline'),
+          resultEl   = document.getElementById('result'),
+          mainUI     = document.getElementById('mainUI');
+
+    document.querySelectorAll('button[data-run]').forEach(btn => {
+      btn.onclick = () => {
+        if (matchEnded) return;
+        const r = +btn.getAttribute('data-run');
+        const label = r === 0 ? 'Dot ball' : `${r} run${r > 1 ? 's' : ''}`;
+        totalRuns += r;
+        balls++;
+        logEvent(label);
+        record({ type: 'run', runs: r });
+        updateStats();
+      };
+    });
+
+    document.getElementById('wicket').onclick = () => {
+      if (matchEnded) return;
+      totalWickets++;
+      balls++;
+      logEvent('Wicket');
+      record({ type: 'wicket' });
+      updateStats();
+    };
+
+    document.getElementById('wide').onclick = () => {
+      if (matchEnded) return;
+      totalRuns++;
+      logEvent('Wide');
+      record({ type: 'wide', runs: 1, extraBall: false });
+      updateStats();
+    };
+
+    document.getElementById('noball').onclick = () => {
+      if (matchEnded) return;
+      let extra = prompt('Runs scored on no-ball (excluding extra)?', '0');
+      let n = parseInt(extra);
+      if (isNaN(n) || n < 0) n = 0;
+      totalRuns += 1 + n;
+      logEvent(`No-ball + ${n} run${n !== 1 ? 's' : ''}`);
+      record({ type: 'noball', runs: 1 + n, extraBall: false });
+      updateStats();
+    };
+
+    document.getElementById('undo').onclick = () => {
+      if (!history.length || matchEnded) return;
+      const act = history.pop();
+      if (tlEl.firstChild) tlEl.removeChild(tlEl.firstChild);
+      switch (act.type) {
+        case 'run': totalRuns -= act.runs; balls--; break;
+        case 'wicket': totalWickets--; balls--; break;
+        case 'wide':
+        case 'noball':
+          totalRuns -= act.runs;
+          if (act.extraBall) balls--;
+          break;
+      }
+      updateStats();
+    };
+
+    document.getElementById('switchInnings').onclick = () => {
+      if (currentInnings === 1) {
+        firstInningsScore = totalRuns;
+        target = totalRuns + 1;
+        currentInnings = 2;
+        totalRuns = 0;
+        totalWickets = 0;
+        balls = 0;
+        history.length = 0;
+        tlEl.innerHTML = '';
+        alert(`Target for 2nd innings is ${target}`);
+        resultEl.textContent = '';
+        matchEnded = false;
+        updateStats();
+      } else {
+        alert("Already in 2nd innings.");
+      }
+    };
+
+    document.getElementById('reset').onclick = () => {
+      totalRuns = 0; totalWickets = 0; balls = 0; target = null; maxOvers = null;
+      currentInnings = 1; firstInningsScore = 0; history.length = 0;
+      tlEl.innerHTML = ''; resultEl.textContent = '';
+      matchEnded = false; mainUI.style.display = 'none';
+      promptOvers();
+    };
+
+    document.getElementById('exportPDF').onclick = () => {
+      const doc = new jsPDF();
+      let y = 10;
+      doc.setFontSize(16).text("Gautam’s Scoreboard", 105, y, null, null, 'center');
+      y += 10;
+      doc.setFontSize(14).text(`Score: ${totalRuns} - ${totalWickets}`, 20, y);
+      y += 8;
+      doc.setFontSize(12).text(`Innings: ${currentInnings}`, 20, y);
+      y += 6;
+      doc.text(`Overs: ${Math.floor(balls/6)}.${balls%6} / ${maxOvers}`, 20, y);
+      y += 6;
+      if (target) doc.text(`Target: ${target}`, 20, y);
+      if (requiredEl.textContent) { y += 6; doc.text(requiredEl.textContent, 20, y); }
+      y += 10; doc.setFontSize(13).text('Timeline:', 20, y);
+      const lines = Array.from(document.querySelectorAll('#timeline div')).map(d => d.textContent).reverse().slice(0, 40);
+      lines.forEach(line => { y += 6; if (y > 280) { doc.addPage(); y = 10; } doc.text(line, 20, y); });
+      doc.save(`Gautam_Scorecard_Innings${currentInnings}.pdf`);
+    };
+
+    function logEvent(label) {
+      const ov = Math.floor(balls / 6) + '.' + (balls % 6);
+      const div = document.createElement('div');
+      div.textContent = `Over ${ov} → ${label}`;
+      tlEl.prepend(div);
+    }
+
+    function record(action) { history.push(action); }
+
+    function updateStats() {
+      runsEl.textContent = totalRuns;
+      wktsEl.textContent = totalWickets;
+      oversEl.textContent = `${Math.floor(balls / 6)}.${balls % 6}`;
+      totalOvEl.textContent = maxOvers !== null ? maxOvers : '–';
+      targetEl.textContent = target !== null ? target : '–';
+      inningsEl.textContent = currentInnings === 1 ? '1st' : '2nd';
+      if (target !== null && maxOvers !== null && currentInnings === 2) {
+        const totalBalls = maxOvers * 6;
+        const remainingBalls = totalBalls - balls;
+        const runsLeft = target - totalRuns;
+        if (runsLeft <= 0) {
+          requiredEl.textContent = '';
+          resultEl.textContent = 'Team 2 wins!';
+          matchEnded = true;
+        } else if (remainingBalls <= 0 || totalWickets >= 10) {
+          requiredEl.textContent = '';
+          resultEl.textContent = 'Team 1 wins!';
+          matchEnded = true;
+        } else {
+          requiredEl.textContent = `Need ${runsLeft} in ${remainingBalls} balls`;
+        }
+      } else {
+        requiredEl.textContent = '';
+      }
+      if (maxOvers !== null && Math.floor(balls / 6) >= maxOvers && !matchEnded) {
+        if (currentInnings === 1) {
+          alert("1st Innings completed.");
+          document.getElementById('switchInnings').click();
+        } else {
+          resultEl.textContent = totalRuns >= target ? 'Team 2 wins!' : 'Team 1 wins!';
+          matchEnded = true;
+        }
+      }
+    }
+
+    function promptOvers() {
+      let n;
+      do {
+        n = parseInt(prompt('Enter overs to start match:'));
+      } while (isNaN(n) || n <= 0);
+      maxOvers = n;
+      mainUI.style.display = 'block';
+      updateStats();
+    }
+
+    promptOvers();
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+  </script>
+</body>
+</html>
