@@ -11,7 +11,8 @@
 
   <style>
     body {
-      margin: 0; padding: 0;
+      margin: 0;
+      padding: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
         Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
       background: #f5f7fa;
@@ -106,8 +107,8 @@
     <div class="scoreboard" id="totalScore">0 - 0</div>
 
     <div class="info" id="infoRunsRequired">Runs Required: -- in -- balls</div>
-
     <div class="info" id="infoOvers">Overs: -- / --</div>
+    <div class="info" id="timeline">Timeline: Match not started</div>
 
     <div class="buttons">
       <button id="run0">Dot ball</button>
@@ -142,10 +143,7 @@
     </div>
   </main>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
-
-  <script defer>
-    // Game state
+  <script>
     let runs = 0, wickets = 0, balls = 0, overs = 0, maxOvers = 0;
     let innings = 1;
     let target = null;
@@ -156,23 +154,29 @@
     const infoOvers = document.getElementById('infoOvers');
     const oversInput = document.getElementById('oversInput');
     const setOversBtn = document.getElementById('setOversBtn');
+    const timeline = document.getElementById('timeline');
 
     function updateDisplay() {
       totalScore.textContent = `${runs} - ${wickets}`;
-      infoOvers.textContent = `Overs: ${Math.floor(balls/6)}.${balls%6} / ${maxOvers || '--'}`;
+      infoOvers.textContent = `Overs: ${Math.floor(balls / 6)}.${balls % 6} / ${maxOvers || '--'}`;
       if (innings === 2 && target !== null) {
-        let runsNeeded = target - runs;
-        let ballsLeft = maxOvers * 6 - balls;
-        infoRunsRequired.textContent = runsNeeded > 0 ?
-          `Runs Required: ${runsNeeded} in ${ballsLeft} balls` :
-          `Target Achieved! Innings Over`;
+        const runsNeeded = target - runs;
+        const ballsLeft = maxOvers * 6 - balls;
+        infoRunsRequired.textContent = runsNeeded > 0
+          ? `Runs Required: ${runsNeeded} in ${ballsLeft} balls`
+          : `Target Achieved! Innings Over`;
       } else {
         infoRunsRequired.textContent = `Runs Required: -- in -- balls`;
       }
     }
 
-    function ballDelivered(isLegal = true) {
-      if (isLegal) {
+    function updateTimeline(action) {
+      const prev = timeline.textContent.replace('Timeline: ', '');
+      timeline.textContent = `Timeline: ${action} | ${prev}`;
+    }
+
+    function ballDelivered(legal = true) {
+      if (legal) {
         balls++;
         if (balls >= maxOvers * 6) {
           endInnings();
@@ -189,6 +193,7 @@
         wickets = 0;
         balls = 0;
         alert(`Innings 1 over! Target for Innings 2: ${target}`);
+        updateTimeline("Innings 1 Over");
         updateDisplay();
       } else {
         if (runs >= target) {
@@ -196,7 +201,7 @@
         } else {
           alert("Team 1 Wins!");
         }
-        // Optionally reset or disable inputs here
+        updateTimeline("Match Over");
       }
     }
 
@@ -204,36 +209,33 @@
       history.push({runs, wickets, balls});
       runs += run;
       ballDelivered(legal);
-      updateDisplay();
+      updateTimeline(`${run} run${run !== 1 ? 's' : ''}`);
     }
 
     function addWicket() {
       history.push({runs, wickets, balls});
       wickets++;
       ballDelivered(true);
-      updateDisplay();
+      updateTimeline("Wicket");
     }
 
     function addWide() {
       history.push({runs, wickets, balls});
       runs++;
-      // Wide does not count as legal ball
+      updateTimeline("Wide");
       updateDisplay();
     }
 
-    function addNoBall(extraRuns=0) {
+    function addNoBall(extraRuns = 0) {
       history.push({runs, wickets, balls});
-      runs++; // 1 run for no ball
-      if (extraRuns > 0) {
-        runs += extraRuns;
-      }
-      // No ball does not count as legal ball
+      runs += 1 + extraRuns;
+      updateTimeline(`No Ball + ${extraRuns} runs`);
       updateDisplay();
     }
 
     function undo() {
-      if(history.length === 0) return;
-      let last = history.pop();
+      if (history.length === 0) return;
+      const last = history.pop();
       runs = last.runs;
       wickets = last.wickets;
       balls = last.balls;
@@ -243,6 +245,9 @@
     function reset() {
       runs = 0; wickets = 0; balls = 0; innings = 1; target = null; maxOvers = 0; history = [];
       oversInput.value = '';
+      setOversBtn.disabled = false;
+      oversInput.disabled = false;
+      timeline.textContent = "Timeline: Match not started";
       updateDisplay();
     }
 
@@ -254,57 +259,37 @@
       }
       maxOvers = val;
       runs = 0; wickets = 0; balls = 0; innings = 1; target = null; history = [];
-      updateDisplay();
       setOversBtn.disabled = true;
       oversInput.disabled = true;
+      updateTimeline(`Match Started - ${val} overs`);
+      updateDisplay();
     }
 
-    // Setup event listeners with both click and touchstart for mobile responsiveness
-    function addBtnListeners(id, handler) {
-      const btn = document.getElementById(id);
-      btn.addEventListener('click', handler);
-      btn.addEventListener('touchstart', e => {
-        e.preventDefault();
-        handler();
-      }, {passive: true});
-    }
-
-    // Runs buttons
-    addBtnListeners('run0', () => addRun(0));
-    addBtnListeners('run1', () => addRun(1));
-    addBtnListeners('run2', () => addRun(2));
-    addBtnListeners('run3', () => addRun(3));
-    addBtnListeners('run4', () => addRun(4));
-    addBtnListeners('run5', () => addRun(5));
-    addBtnListeners('run6', () => addRun(6));
-
-    // Extras
-    addBtnListeners('wide', () => addWide());
-    addBtnListeners('noball', () => {
-      let extra = prompt("Extra runs scored on no ball (0 for none):", "0");
+    // Assign button listeners (only 'click' to avoid double tap)
+    document.getElementById('run0').addEventListener('click', () => addRun(0));
+    document.getElementById('run1').addEventListener('click', () => addRun(1));
+    document.getElementById('run2').addEventListener('click', () => addRun(2));
+    document.getElementById('run3').addEventListener('click', () => addRun(3));
+    document.getElementById('run4').addEventListener('click', () => addRun(4));
+    document.getElementById('run5').addEventListener('click', () => addRun(5));
+    document.getElementById('run6').addEventListener('click', () => addRun(6));
+    document.getElementById('wide').addEventListener('click', () => addWide());
+    document.getElementById('noball').addEventListener('click', () => {
+      let extra = prompt("Extra runs scored on no ball (0 if none):", "0");
       extra = parseInt(extra);
       if (isNaN(extra) || extra < 0) extra = 0;
       addNoBall(extra);
     });
-
-    // Wicket
-    addBtnListeners('wicket', () => addWicket());
-
-    // Undo, Reset, Switch Innings
-    addBtnListeners('undo', () => undo());
-    addBtnListeners('reset', () => {
+    document.getElementById('wicket').addEventListener('click', () => addWicket());
+    document.getElementById('undo').addEventListener('click', () => undo());
+    document.getElementById('reset').addEventListener('click', () => {
       if (confirm("Reset match?")) reset();
-      setOversBtn.disabled = false;
-      oversInput.disabled = false;
     });
-    addBtnListeners('switchInnings', () => {
-      if(confirm("Switch innings early?")) endInnings();
+    document.getElementById('switchInnings').addEventListener('click', () => {
+      if (confirm("Switch innings early?")) endInnings();
     });
+    document.getElementById('setOversBtn').addEventListener('click', () => startMatch());
 
-    // Start match
-    addBtnListeners('setOversBtn', () => startMatch());
-
-    // Initial display update
     updateDisplay();
   </script>
 </body>
