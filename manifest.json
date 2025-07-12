@@ -3,8 +3,8 @@
   "short_name": "Gautam",
   "start_url": ".",
   "display": "standalone",
-  "background_color": "#fafafa",
-  "theme_color": "#444",
+  "background_color": "#f5f7fa",
+  "theme_color": "#2c3e50",
   "icons": [
     {
       "src": "icon-192.png",
